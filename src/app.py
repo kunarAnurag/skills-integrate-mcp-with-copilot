@@ -10,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
 from pathlib import Path
+import json
+import secrets
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -18,6 +20,13 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+# Load teachers from JSON
+with open(os.path.join(current_dir, "teachers.json"), "r") as f:
+    teachers = json.load(f)
+
+# In-memory active sessions (token -> username)
+active_sessions = {}
 
 # In-memory activity database
 activities = {
@@ -84,6 +93,31 @@ activities = {
 }
 
 
+@app.post("/login")
+def login(username: str, password: str):
+    """Login for teachers"""
+    for teacher in teachers:
+        if teacher["username"] == username and teacher["password"] == password:
+            token = secrets.token_hex(16)
+            active_sessions[token] = username
+            return {"token": token, "message": "Login successful"}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+@app.get("/logout")
+def logout(token: str):
+    """Logout"""
+    if token in active_sessions:
+        del active_sessions[token]
+        return {"message": "Logged out"}
+    raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def check_auth(token: str):
+    """Check if token is valid"""
+    return token in active_sessions
+
+
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
@@ -117,8 +151,11 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
-    """Unregister a student from an activity"""
+def unregister_from_activity(activity_name: str, email: str, token: str):
+    """Unregister a student from an activity (requires teacher login)"""
+    if not check_auth(token):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     # Validate activity exists
     if activity_name not in activities:
         raise HTTPException(status_code=404, detail="Activity not found")

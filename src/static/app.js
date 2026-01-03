@@ -3,6 +3,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const userIcon = document.getElementById("user-icon");
+  const loginBtn = document.getElementById("login-btn");
+  const logoutBtn = document.getElementById("logout-btn");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const loginMessage = document.getElementById("login-message");
+  const closeModal = document.querySelector(".close");
+
+  let authToken = localStorage.getItem("authToken");
+  let isLoggedIn = !!authToken;
+
+  // Update UI based on login status
+  function updateAuthUI() {
+    if (isLoggedIn) {
+      loginBtn.classList.add("hidden");
+      logoutBtn.classList.remove("hidden");
+    } else {
+      loginBtn.classList.remove("hidden");
+      logoutBtn.classList.add("hidden");
+    }
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -21,7 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const spotsLeft =
           details.max_participants - details.participants.length;
 
-        // Create participants HTML with delete icons instead of bullet points
+        // Create participants HTML with delete icons only if logged in
         const participantsHTML =
           details.participants.length > 0
             ? `<div class="participants-section">
@@ -30,7 +51,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${isLoggedIn ? `<button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button>` : ''}</li>`
                   )
                   .join("")}
               </ul>
@@ -77,7 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const response = await fetch(
         `/activities/${encodeURIComponent(
           activity
-        )}/unregister?email=${encodeURIComponent(email)}`,
+        )}/unregister?email=${encodeURIComponent(email)}&token=${encodeURIComponent(authToken)}`,
         {
           method: "DELETE",
         }
@@ -155,6 +176,79 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Auth event listeners
+  userIcon.addEventListener("click", () => {
+    if (isLoggedIn) {
+      // Show logout option or just logout
+      handleLogout();
+    } else {
+      loginModal.classList.remove("hidden");
+    }
+  });
+
+  loginBtn.addEventListener("click", () => {
+    loginModal.classList.remove("hidden");
+  });
+
+  logoutBtn.addEventListener("click", handleLogout);
+
+  closeModal.addEventListener("click", () => {
+    loginModal.classList.add("hidden");
+  });
+
+  window.addEventListener("click", (event) => {
+    if (event.target === loginModal) {
+      loginModal.classList.add("hidden");
+    }
+  });
+
+  // Login form submission
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch("/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ username, password }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        authToken = result.token;
+        localStorage.setItem("authToken", authToken);
+        isLoggedIn = true;
+        updateAuthUI();
+        fetchActivities(); // Refresh to show delete buttons
+        loginModal.classList.add("hidden");
+        loginForm.reset();
+        loginMessage.classList.add("hidden");
+      } else {
+        loginMessage.textContent = result.detail || "Login failed";
+        loginMessage.className = "error";
+        loginMessage.classList.remove("hidden");
+      }
+    } catch (error) {
+      loginMessage.textContent = "Login failed. Please try again.";
+      loginMessage.className = "error";
+      loginMessage.classList.remove("hidden");
+      console.error("Error logging in:", error);
+    }
+  });
+
+  function handleLogout() {
+    authToken = null;
+    localStorage.removeItem("authToken");
+    isLoggedIn = false;
+    updateAuthUI();
+    fetchActivities(); // Refresh to hide delete buttons
+  }
+
   // Initialize app
+  updateAuthUI();
   fetchActivities();
-});
